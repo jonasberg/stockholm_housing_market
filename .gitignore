@@ -1,0 +1,9 @@
+*/__pycache__
+venv
+temp
+logs
+property_data
+*.csv
+*.xlsx
+*/.ipynb_checkpoints
+*.rar
