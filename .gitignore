@@ -2,7 +2,7 @@
 venv
 temp
 logs
-property_data
+data/
 *.csv
 *.xlsx
 */.ipynb_checkpoints

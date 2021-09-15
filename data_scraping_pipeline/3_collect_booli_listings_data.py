@@ -8,28 +8,24 @@ contain info about:
 """
 
 import os
-import requests
 import re
 import time
 import logging
 import json
 import pandas as pd
-import numpy as np
-from logging_helper import setup_logging
+from helper_functions import setup_logging, get_settings, respectful_requesting, \
+                                missing_field_decorator, append_to_csv
 from numpy.random import normal
 from working_dir import WORKING_DIR
+
 # ----------------------- CONFIG -----------------------
-URL_TEMPLATE = r"https://www.booli.se{listing_url}"
-DEBUG = False
-TARGET_DIR = os.path.join(WORKING_DIR, "property_data")
-SAVE_TO_FILE_EVERY_N_PROPERTIES = 100
-SECONDS_BETWEEN_REQUESTS = 1.5
-N_SECONDS_PAUSE_AT_ERROR_CODE = 5*60 # How many seconds to pause before resume 
-                        # scraping, if error message is returned from booli.
-START_FROM_LISTING_ID = None # Skip all listings below given ID, if not None
+URL_TEMPLATE = r"https://www.booli.se{listing_URL}"
+TARGET_DIR = os.path.join(WORKING_DIR, "data", "listings_data")
+SAVE_TO_FILE_EVERY_N_LISTINGS = 100
 # ------------------------------------------------------
 
-setup_logging(__file__, debug=DEBUG) # Formats logging and store warnings/exceptions to file
+settings = get_settings()
+setup_logging(__file__)
 
 class ParseProperty(object):
     def __init__(self, listing_id, listing_URL, apollo_state_json):
@@ -54,7 +50,8 @@ class ParseProperty(object):
         self.apartment_number = self.get_apartment_number()
         self.descriptive_area_name = self.get_descriptive_area_name()
         self.has_solar_panels = self.get_has_solar_panels()
-        self.brf_name, self.brf_url = self.get_brf_name_and_url()
+        self.brf_name = self.get_brf_name()
+        self.brf_URL = self.get_brf_URL()
         self.montly_payment = self.get_monthly_payment()
         self.rent = self.get_rent()
         self.rooms = self.get_rooms()
@@ -62,118 +59,93 @@ class ParseProperty(object):
         self.primary_area = self.get_primary_area()
         self.floor = self.get_floor()
         self.operating_cost = self.get_operating_cost()
-        self.estimate_price, self.estimate_low, self.estimate_high = self.get_estimates()
+        self.estimate_price = self.get_estimate()
+        self.estimate_low = self.get_estimate_low()
+        self.estimate_high = self.get_estimate_high()
         self.areas = self.get_areas()
 
+    @missing_field_decorator
     def get_latitude(self):    
         return self.property_data["latitude"]
     
+    @missing_field_decorator
     def get_longitude(self):
         return self.property_data["longitude"]
 
+    @missing_field_decorator
     def get_construction_year(self):
         return self.property_data["constructionYear"]
 
+    @missing_field_decorator
     def get_energy_class(self):
-        try:
-            return self.property_data["energyClass"]["score"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("energyClass")
-            return None
-    
+        return self.property_data["energyClass"]["score"]
+
+    @missing_field_decorator    
     def get_address(self):
         return self.property_data["streetAddress"]
 
+    @missing_field_decorator
     def get_object_type(self):
         return self.property_data["objectType"]
-    
+
+    @missing_field_decorator    
     def get_descriptive_area_name(self):
         return self.property_data["descriptiveAreaName"]
-    
+
+    @missing_field_decorator    
     def get_has_solar_panels(self):
         return self.property_data["hasSolarPanels"]
 
+    @missing_field_decorator
     def get_monthly_payment(self):
         return self.property_data["monthlyPayment"]
 
+    @missing_field_decorator
     def get_apartment_number(self):
-        try:
-            return self.property_data["apartmentNumber"]["formatted"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("apartmentNumber")
-            return None
+        return self.property_data["apartmentNumber"]["formatted"]
+    @missing_field_decorator
+    def get_brf_name(self):
+        return self.property_data["housingCoop"]["name"]
 
-    def get_brf_name_and_url(self):
-        try:
-            brf_name = self.property_data["housingCoop"]["name"]
-            brf_url = self.property_data["housingCoop"]["link"]
-            return (brf_name, brf_url)
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("housingCoop")
-            return (None, None)
-
+    @missing_field_decorator
+    def get_brf_URL(self):
+        return self.property_data["housingCoop"]["link"]
+        
+    @missing_field_decorator
     def get_rent(self):
-        try:
-            return self.property_data["rent"]["raw"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("rent")
-            return None
-
+        return self.property_data["rent"]["raw"]
+        
+    @missing_field_decorator
     def get_rooms(self):
-        try:
-            return self.property_data["rooms"]["raw"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("rooms")
-            return None
+        return self.property_data["rooms"]["raw"]
 
+    @missing_field_decorator
     def get_sqm(self):
-        try:
-            return self.property_data["livingArea"]["raw"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("livingArea")
-            return None
-
+        return self.property_data["livingArea"]["raw"]
+        
+    @missing_field_decorator
     def get_primary_area(self):
-        try:
-            return self.property_data["primaryArea"]["name"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("primaryArea")
-            return None
-
+        return self.property_data["primaryArea"]["name"]
+        
+    @missing_field_decorator
     def get_floor(self):
-        try:
-            return self.property_data["floor"]["formatted"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("floor")
-            return None
-
+        return self.property_data["floor"]["formatted"]
+        
+    @missing_field_decorator
     def get_operating_cost(self):
-        try:
-            return self.property_data["operatingCost"]["raw"]
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("operatingCost")
-            return None
-
-    def get_estimates(self):
-        try:
-            price = self.property_data["estimate"]["price"]["formatted"]
-            low = self.property_data["estimate"]["low"]["formatted"]
-            high = self.property_data["estimate"]["high"]["formatted"]
-
-            return (price, low, high)
-        except Exception as e:
-            # Checking for potentially missed data
-            self.check_for_missed_data("estimate")
-            return (None, None, None)
+        return self.property_data["operatingCost"]["raw"]
+        
+    @missing_field_decorator
+    def get_estimate(self):
+        return self.property_data["estimate"]["price"]["formatted"]
+    
+    @missing_field_decorator
+    def get_estimate_low(self):
+        return self.property_data["estimate"]["low"]["formatted"]
+    
+    @missing_field_decorator
+    def get_estimate_high(self):
+        return self.property_data["estimate"]["high"]["formatted"]
 
     def get_areas(self):
         try:
@@ -196,7 +168,7 @@ class ParseProperty(object):
             "descriptive_area_name" : [self.descriptive_area_name],
             "has_solar_panels" : [self.has_solar_panels],
             "brf_name" : [self.brf_name],
-            "brf_url" : [self.brf_url],
+            "brf_URL" : [self.brf_URL],
             "montly_payment" : [self.montly_payment],
             "rent" : [self.rent],
             "rooms" : [self.rooms],
@@ -215,20 +187,6 @@ class ParseProperty(object):
         })
 
         return (data_df, property_to_area_pairs_df)
-    
-    def check_for_missed_data(self, field):
-        # Do nothing if key is not present or field is None.
-        if field not in self.property_data.keys():
-            return None
-        if self.property_data[field] is None:
-            return None
-
-        msg = f"Potentially missing data for listing {self.listing_id}.\n" + \
-                f"Data field: {field}.\n" + \
-                " Data available and not used:\n\n" + \
-                json.dumps(self.property_data[field], indent=4)
-
-        logging.warning(msg)
         
 class ParseAreas(object):
     def __init__(self, apollo_state_json):
@@ -360,89 +318,51 @@ class ParseAgents(object):
             "agent_seller_favorite", 
             "agent_premium", 
             "agent_review_count", 
-            "agent_url",
+            "agent_URL",
             "agent_published_count",
             "agent_published_value"
         ]
 
         return pd.DataFrame(data, columns=columns)
 
-def get_scraped_URLs():
-    filepath = os.path.join(TARGET_DIR, "property_and_listings_data.csv")
+def get_scraped_listings():
+    filepath = os.path.join(TARGET_DIR, "listings_data.csv")
     if os.path.isfile(filepath):
         df = pd.read_csv(filepath, delimiter=";", encoding="utf8", index_col=0)
         return df["property_URL"].values
     else:
         return []
 
-def append_to_csv(filename, df, avoid_duplicates=False, key_column=None):
-    filepath = os.path.join(TARGET_DIR, filename)
-
-    # If no file exists, simply write to filepath
-    if not os.path.isfile(filepath):
-        df.to_csv(filepath, sep=";", encoding="utf8")
-        return
-    
-    old_df = pd.read_csv(filepath, delimiter=";", encoding="utf8", index_col=0)
-
-    if avoid_duplicates:
-        existing_rows = old_df[key_column].astype("str")
-        rows_to_add = ~df[key_column].astype("str").isin(existing_rows)
-        combined_df = pd.concat([old_df, df[rows_to_add]], ignore_index=True)
-    else:
-        combined_df = pd.concat([old_df, df], ignore_index=True)
-
-    combined_df.to_csv(filepath, sep=";", encoding="utf8")
-    return
-
 # Make sure listing data is available
-listings_csv_path = os.path.join(WORKING_DIR, "listings_data.csv")
-assert os.path.isfile(listings_csv_path), "Can't find 'listings_data.csv' in WORKING_DIR"
+listing_URLs_csv_path = os.path.join(WORKING_DIR, "data", "listings_URLs.csv")
+assert os.path.isfile(listing_URLs_csv_path), "Can't find 'listings_URLs.csv' in data folder"
 
 # Create output folder, if not already present
 if not os.path.isdir(TARGET_DIR):
     os.mkdir(TARGET_DIR)
 
-listings_df = pd.read_csv(listings_csv_path, delimiter=";", encoding="utf8", index_col=0)
-listings = listings_df.sort_values(by="listing_id")[["listing_id", "listing_URL"]].drop_duplicates()
+listing_URLs_df = pd.read_csv(listing_URLs_csv_path, delimiter=";", encoding="utf8", index_col=0)
+listing_URLs = listing_URLs_df.sort_values(by="listing_id").drop_duplicates()
 
-# Get previously scraped URLs to avoid scraping them again
-scraped_URLs = get_scraped_URLs()
+# Get previously scraped listings to avoid scraping them again
+scraped_listings = get_scraped_listings()
 
 # Initialize dataframes
-property_and_listings_df = pd.DataFrame()
+listings_df = pd.DataFrame()
 property_to_area_df = pd.DataFrame()
 areas_df = pd.DataFrame()
 agents_df = pd.DataFrame()
 
-for _, (listing_id, listing_URL) in listings.iterrows():
-    if START_FROM_LISTING_ID is not None and listing_id < START_FROM_LISTING_ID:
-        continue
-
-    if listing_URL in scraped_URLs:
+for _, (listing_id, listing_URL) in listing_URLs.iterrows():
+    if listing_URL in scraped_listings:
         logging.info(f"Already scraped {listing_URL}, continuing to next listing...")
         continue
 
-    s = max(1, normal(SECONDS_BETWEEN_REQUESTS, SECONDS_BETWEEN_REQUESTS/3))
-    logging.debug(f"Sleeping for {s} seconds")
-    time.sleep(s)
-
-    curr_url = URL_TEMPLATE.format(listing_url=listing_URL)
-    
-    resp = requests.get(curr_url)
-    # If status code other than 200 or 404 is returned, the program sleeps for a predetermined amount of 
-    # seconds before retrying the request. If this occurs multiple times in a row, double the pause length 
-    # at each failure.
-    pause_exponent = 0
-    while resp.status_code not in [200, 404]:
-        pause_length = 2**pause_exponent*N_SECONDS_PAUSE_AT_ERROR_CODE
-        logging.warning(f"Status code {resp.status_code} returned. Pausing for {pause_length} seconds.")
-        time.sleep(pause_length)
-        resp = requests.get(curr_url)
-        pause_exponent += 1
+    curr_URL = URL_TEMPLATE.format(listing_URL=listing_URL)
+    status_code, data = respectful_requesting(curr_URL)
     
     # If a 404 is returned, log a warning and continue to next listing
-    if resp.status_code == 404:
+    if status_code == 404:
         logging.warning(f"Status code 404 returned for {listing_URL}, continuing to next listing...")
         continue
 
@@ -450,7 +370,7 @@ for _, (listing_id, listing_URL) in listings.iterrows():
     start = time.time()
 
     # Load the apollo state, containing json data for the page
-    apollo_state = re.findall(r'<script>window\.__APOLLO_STATE__ = (.+?)</script>', resp.text)
+    apollo_state = re.findall(r'<script>window\.__APOLLO_STATE__ = (.+?)</script>', data)
     if len(apollo_state) == 0:
         raise(Exception("Could not find APOLLO_STATE."))
     apollo_state_json = json.loads(apollo_state[0])
@@ -468,29 +388,29 @@ for _, (listing_id, listing_URL) in listings.iterrows():
     # Merge listings and property df; replicate property df for multiple sales of same property
     n_sales = len(curr_listings_df)
     curr_property_df = pd.concat([curr_property_df] * n_sales, ignore_index=True)
-    curr_property_and_listings_df = pd.concat([curr_property_df, curr_listings_df], axis=1)
+    curr_listings_df = pd.concat([curr_property_df, curr_listings_df], axis=1)
 
     # Append to dataframes
-    property_and_listings_df = pd.concat([property_and_listings_df, curr_property_and_listings_df], ignore_index=True)
+    listings_df = pd.concat([listings_df, curr_listings_df], ignore_index=True)
     property_to_area_df = pd.concat([property_to_area_df, curr_property_to_area_df], ignore_index=True)
     areas_df = pd.concat([areas_df, curr_areas_df], ignore_index=True)
     agents_df = pd.concat([agents_df, curr_agents_df], ignore_index=True)
 
-    if len(property_and_listings_df) >= SAVE_TO_FILE_EVERY_N_PROPERTIES:
+    if len(listings_df) >= SAVE_TO_FILE_EVERY_N_LISTINGS:
         # Save to CSV
-        append_to_csv("property_and_listings_data.csv", property_and_listings_df)
-        append_to_csv("property_to_area.csv", property_to_area_df)
-        append_to_csv("areas.csv", areas_df, avoid_duplicates=True, key_column="area_id")
-        append_to_csv("agents.csv", agents_df, avoid_duplicates=True, key_column="agent_id")
-        logging.info(f"Saved {len(property_and_listings_df)} scraped properties to file.")
+        append_to_csv(os.path.join(TARGET_DIR, "listings.csv"), listings_df)
+        append_to_csv(os.path.join(TARGET_DIR, "property_to_area.csv"), property_to_area_df)
+        append_to_csv(os.path.join(TARGET_DIR, "areas.csv"), areas_df, avoid_duplicates=True, key_column="area_id")
+        append_to_csv(os.path.join(TARGET_DIR, "agents.csv"), agents_df, avoid_duplicates=True, key_column="agent_id")
+        logging.info(f"Saved {len(listings_df)} scraped listings to file.")
 
         # Reset dataframes
-        property_and_listings_df = pd.DataFrame()
+        listings_df = pd.DataFrame()
         property_to_area_df = pd.DataFrame()
         areas_df = pd.DataFrame()
         agents_df = pd.DataFrame()
 
     logging.debug("Time elapsed for processing: " + str(time.time() - start))
 
-    if DEBUG:
+    if settings["debug"]:
         break

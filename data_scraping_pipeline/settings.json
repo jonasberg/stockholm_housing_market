@@ -1,0 +1,8 @@
+{
+    "seconds_between_requests" : 3,
+    "n_seconds_pause_at_error_code" : 300,
+    "debug" : false,
+    "use_selenium": false,
+    "selenium_chrome_driver_path" : "C:/Path/To/chromedriver.exe", 
+    "log_to_file" : true
+}
