@@ -16,7 +16,7 @@ from working_dir import WORKING_DIR
 # ----------------------- CONFIG -----------------------
 URL_TEMPLATE = r"https://www.booli.se{brf_URL}"
 TARGET_DIR = os.path.join(WORKING_DIR, "data", "brf_data")
-PROPERTIES_CSV = filepath = os.path.join(WORKING_DIR, "data", "listings_data", "property_and_listings_data.csv")
+LISTINGS_CSV = os.path.join(WORKING_DIR, "data", "listings_data", "listings_data.csv")
 # ------------------------------------------------------
 
 settings = get_settings()
@@ -124,7 +124,7 @@ class ParseBRF(object):
         })
 
 def get_brf_URLs():
-    df = pd.read_csv(PROPERTIES_CSV, delimiter=";", encoding="utf8", index_col=0)
+    df = pd.read_csv(LISTINGS_CSV, delimiter=";", encoding="utf8", index_col=0)
     col = df["brf_URL"]
     
     return col[col.notna()].unique()
@@ -138,7 +138,7 @@ def get_scraped_IDs():
         return []
 
 # Make sure listing data is available
-assert os.path.isfile(PROPERTIES_CSV), "Can't find file 'property_and_listings_data.csv'"
+assert os.path.isfile(LISTINGS_CSV), "Can't find file 'listings_data.csv'"
 
 # Create output folder, if not already present
 if not os.path.isdir(TARGET_DIR):

@@ -1,0 +1,39 @@
+body {
+    margin: 0;
+    background-color: #111111;
+    color:#EEEEEE;
+    overflow: hidden;
+}
+
+#main-container {
+    display: flex;
+    height: 100vh;
+}
+
+#sidebar {
+    width: 300px;
+    min-width: 300px; /* Unsure why this is needed, but it is during resize. */
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+}
+
+#filters p {
+    margin-top: 10px;
+}
+
+#options {
+    margin-top: auto;
+}
+
+#data-selection .Select-menu-outer {
+    color: #111;
+}
+
+.map-loader-wrapper {
+    flex: 1 0 auto;
+}
+
+#map {
+    height: 100%;
+}
